@@ -21,9 +21,7 @@ async def login_google():
         value=state,
         httponly=True,
         secure=True,
-        samesite="lax",
-        domain=".maileyo.in",
-        max_age=200
+        samesite="lax"
     )
     return response
 
@@ -93,8 +91,6 @@ async def logout():
     response = Response(content="Logged out successfully")
     response.delete_cookie(
         key="token",
-        domain=".maileyo.in",
-        secure=True,
-        samesite="none"
+        domain=".maileyo.in"
     )
     return response
