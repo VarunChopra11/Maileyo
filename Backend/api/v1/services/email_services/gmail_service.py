@@ -5,7 +5,11 @@ import json
 import re
 import uuid
 from typing import Optional, Dict, Any, List
+import logging
 from api.v1.utils.tokens import get_access_token
+from api.v1.services.email_services.mime_parser import MimeParser
+
+logger = logging.getLogger(__name__)
 
 
 class GmailService:
@@ -165,6 +169,10 @@ class GmailService:
             
             try:
                 message_data = json.loads(json_body)
+                try:
+                    message_data["parsed_content"] = MimeParser.parse_gmail_message(message_data)
+                except Exception as pe:
+                    logger.warning(f"Failed to parse MIME for message {message_data.get('id')}: {pe}")
                 messages.append(message_data)
             except json.JSONDecodeError as e:
                 raise Exception(f"Failed to parse JSON from batch response: {e}")
@@ -223,12 +231,14 @@ class GmailService:
         self,
         user_id: str,
         email_address: str,
-        background_tasks: BackgroundTasks,
+        background_tasks: Optional[BackgroundTasks] = None,
         max_results: int = 20,
         page_token: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Fetch all emails exchanged with a specific contact/email address.
+        NOTE: Aggressive auto-read marking has been removed so opening a contact
+        does not prematurely mark unread messages as read in Gmail.
         """
         query = f"from:{email_address} OR to:{email_address}"
 
@@ -239,13 +249,6 @@ class GmailService:
             query=query
         )
         message_ids = [m["id"] for m in contact_message_ids.get("messages", [])]
-
-        if message_ids:
-            background_tasks.add_task(
-                self.mark_messages_as_read,
-                user_id,
-                message_ids
-            )
 
         full_messages = await self.messages_batch_request(user_id, message_ids)
 
@@ -259,44 +262,66 @@ class GmailService:
     async def send_email(
             self,
             user_id: str,
-            to: str,
+            to: Any,
             subject: str,
-            body_plain: str,
+            body_plain: Optional[str] = None,
             body_html: Optional[str] = None,
             cc: Optional[List[str]] = None,
             bcc: Optional[List[str]] = None,
+            thread_id: Optional[str] = None,
+            in_reply_to: Optional[str] = None,
+            references: Optional[str] = None,
             attachments: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         Send an email using Gmail API.
+        Preserves Gmail thread integrity by attaching threadId, In-Reply-To, and References.
         """
         from email.message import EmailMessage
 
         msg = EmailMessage()
-        msg["To"] = to
+        if isinstance(to, list):
+            msg["To"] = ", ".join(to)
+        else:
+            msg["To"] = str(to)
+
         msg["Subject"] = subject
         msg["From"] = "me"
         if cc:
-            msg["Cc"] = ", ".join(cc)
+            msg["Cc"] = ", ".join(cc) if isinstance(cc, list) else str(cc)
         if bcc:
-            msg["Bcc"] = ", ".join(bcc)
+            msg["Bcc"] = ", ".join(bcc) if isinstance(bcc, list) else str(bcc)
 
-        msg.set_content(body_plain)
-        if body_html:
+        # RFC 5322 Thread Continuity Headers
+        if in_reply_to:
+            msg["In-Reply-To"] = in_reply_to
+        if references:
+            msg["References"] = references
+
+        if body_plain:
+            msg.set_content(body_plain)
+        elif body_html:
+            msg.set_content(body_html)
+
+        if body_html and body_plain:
             msg.add_alternative(body_html, subtype='html')
+
         if attachments:
             for attachment in attachments:
                 filename = attachment.get("filename", "attachment")
                 data = attachment.get("content")
                 mime_type = attachment.get("mimeType", "application/octet-stream")
                 if data:
-                    # data is a base64 string (no Data URL prefix)
                     file_bytes = base64.b64decode(data)
                     maintype, _, subtype = mime_type.partition("/")
                     msg.add_attachment(file_bytes, maintype=maintype, subtype=subtype, filename=filename)
+
         raw_msg = msg.as_bytes()
         encoded_msg = base64.urlsafe_b64encode(raw_msg).decode()
-        payload = {"raw": encoded_msg}
+        payload: Dict[str, Any] = {"raw": encoded_msg}
+        if thread_id:
+            payload["threadId"] = thread_id
+
         url = f"{self.BASE_URL}/messages/send"
         headers = await self._get_headers(user_id)
         async with aiohttp.ClientSession() as session:

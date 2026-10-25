@@ -104,24 +104,20 @@ class GoogleAuthService:
         refresh_expires_in = token_data.get("refresh_token_expires_in")
         
         if not expires_in or expires_in <= 0:
-            logger.error(f"Invalid expires_in value: {expires_in}")
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid token expiration information"
-            )
-        if not refresh_expires_in or refresh_expires_in <= 0:
-            logger.error(f"Invalid refresh_token_expires_in value: {refresh_expires_in}")
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid refresh token expiration information"
-            )
+            expires_in = 3600
         
         access_token_expiry = now + timedelta(seconds=expires_in)
-        refresh_token_expiry = now + timedelta(seconds=refresh_expires_in)
+
+        # Standard Google OAuth 2.0 Web Server Flow does not return refresh_token_expires_in.
+        # Fallback to 6 months (180 days) if not provided.
+        if refresh_expires_in and refresh_expires_in > 0:
+            refresh_token_expiry = now + timedelta(seconds=refresh_expires_in)
+        else:
+            refresh_token_expiry = now + timedelta(days=180)
 
         # Verify ID token
         try:
-            id_info = verify_id_token_with_retry(id_token_str, auth_config.GOOGLE_CLIENT_ID)
+            id_info = await verify_id_token_with_retry(id_token_str, auth_config.GOOGLE_CLIENT_ID)
         except ValueError as ve:
             logger.error(f"Invalid ID token: {str(ve)}")
             raise HTTPException(status_code=400, detail="Invalid ID token") from ve

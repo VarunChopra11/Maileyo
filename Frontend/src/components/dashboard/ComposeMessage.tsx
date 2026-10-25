@@ -10,12 +10,24 @@ import { toast } from "sonner";
 interface ComposeMessageProps {
   selectedContact: EmailContact;
   onMessageSent: (message: EmailMessage) => void;
+  activeThreadId?: string | null;
+  activeThreadSubject?: string;
+  latestMessageInThread?: EmailMessage | null;
+  onClearThread?: () => void;
 }
 
-function ComposeMessage({ selectedContact, onMessageSent }: ComposeMessageProps) {
+function ComposeMessage({
+  selectedContact,
+  onMessageSent,
+  activeThreadId,
+  activeThreadSubject,
+  latestMessageInThread,
+  onClearThread,
+}: ComposeMessageProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isRichText, setIsRichText] = useState(false);
   const [sending, setSending] = useState(false);
+  const [replyMode, setReplyMode] = useState<"thread" | "new">(activeThreadId ? "thread" : "new");
   const [formData, setFormData] = useState({
     to: selectedContact.email,
     cc: "",
@@ -27,11 +39,28 @@ function ComposeMessage({ selectedContact, onMessageSent }: ComposeMessageProps)
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Update recipient when selectedContact changes
-  // (fixes: contact email not updating)
+  // Synchronize reply mode and subject when active thread changes
   useEffect(() => {
-    setFormData(prev => ({ ...prev, to: selectedContact.email }));
-  }, [selectedContact.email]);
+    if (activeThreadId) {
+      setReplyMode("thread");
+      const normalizedSub = activeThreadSubject
+        ? (activeThreadSubject.toLowerCase().startsWith("re:") ? activeThreadSubject : `Re: ${activeThreadSubject}`)
+        : "Re: Conversation";
+      setFormData(prev => ({
+        ...prev,
+        to: selectedContact.email,
+        subject: normalizedSub
+      }));
+    } else {
+      setReplyMode("new");
+      setFormData(prev => ({
+        ...prev,
+        to: selectedContact.email,
+        subject: ""
+      }));
+    }
+  }, [activeThreadId, activeThreadSubject, selectedContact.email]);
+
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -98,13 +127,17 @@ function ComposeMessage({ selectedContact, onMessageSent }: ComposeMessageProps)
 
     try {
       setSending(true);
+      const isReplying = replyMode === "thread" && Boolean(activeThreadId);
+
       // Build email data according to backend schema
       const emailData: SendEmailRequest = {
         to: formData.to.split(",").map(email => email.trim()).filter(Boolean),
-        subject: formData.subject || "No Subject",
-        // Auto-detect html/plain
+        subject: formData.subject || (isReplying ? (activeThreadSubject || "Re: Conversation") : "No Subject"),
         body_plain: isHtml(formData.body) ? undefined : formData.body,
         body_html: isHtml(formData.body) ? formData.body : undefined,
+        thread_id: isReplying ? (activeThreadId || undefined) : undefined,
+        in_reply_to: isReplying && latestMessageInThread ? latestMessageInThread.id : undefined,
+        references: isReplying && latestMessageInThread ? latestMessageInThread.id : undefined,
       };
       if (formData.cc.trim()) {
         emailData.cc = formData.cc.split(",").map(email => email.trim()).filter(Boolean);
@@ -146,7 +179,7 @@ function ComposeMessage({ selectedContact, onMessageSent }: ComposeMessageProps)
       // UI message object
       const newMessage: EmailMessage = {
         id: response.message_id || `temp-${Date.now()}`,
-        threadId: response.thread_id || `temp-thread-${Date.now()}`,
+        threadId: response.thread_id || (activeThreadId || `temp-thread-${Date.now()}`),
         from: "me",
         to: emailData.to,
         cc: emailData.cc,
@@ -163,16 +196,14 @@ function ComposeMessage({ selectedContact, onMessageSent }: ComposeMessageProps)
         labels: ["SENT"]
       };
       onMessageSent(newMessage);
-      setFormData({
+      setFormData(prev => ({
+        ...prev,
         to: selectedContact.email,
-        cc: "",
-        bcc: "",
-        subject: "",
         body: ""
-      });
+      }));
       setAttachments([]);
       setIsExpanded(false);
-      toast.success("Email sent successfully!");
+      toast.success(isReplying ? "Reply sent in thread!" : "Email sent successfully!");
     } catch (error) {
       toast.error("Failed to send email");
     } finally {
@@ -182,11 +213,42 @@ function ComposeMessage({ selectedContact, onMessageSent }: ComposeMessageProps)
 
   // --- UI ---
   return (
-  <div className="rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 bg-gradient-to-br from-white via-gray-50 to-gray-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 p-0">
-
+  <div className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4">
+      <div className="max-w-4xl mx-auto space-y-3">
+        {/* Thread status & switcher toggle */}
+        {activeThreadId ? (
+          <div className="flex items-center justify-between px-3 py-2 bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 rounded-xl text-xs">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0" />
+              <span className="font-semibold text-indigo-900 dark:text-indigo-200 truncate">
+                {replyMode === "thread"
+                  ? `Replying in thread: "${activeThreadSubject || 'Current Conversation'}"`
+                  : `Starting a new thread with ${selectedContact.name}`}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (replyMode === "thread") {
+                  setReplyMode("new");
+                  setFormData(prev => ({ ...prev, subject: "" }));
+                  onClearThread?.();
+                } else {
+                  setReplyMode("thread");
+                  const normalizedSub = activeThreadSubject
+                    ? (activeThreadSubject.toLowerCase().startsWith("re:") ? activeThreadSubject : `Re: ${activeThreadSubject}`)
+                    : "Re: Conversation";
+                  setFormData(prev => ({ ...prev, subject: normalizedSub }));
+                }
+              }}
+              className="px-2.5 py-1 text-xs font-semibold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 rounded-lg transition-colors shadow-xs ml-2 flex-shrink-0"
+            >
+              {replyMode === "thread" ? "Start new thread" : "Reply in thread"}
+            </button>
+          </div>
+        ) : null}
 
       {/* Compose form */}
-  <div className="px-5 py-1 space-y-2">
         {/* Rich Text & Expand/Collapse buttons now here */}
         <div className="flex items-center justify-end gap-2 mb-2">
           <button
