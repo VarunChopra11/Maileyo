@@ -24,76 +24,79 @@ function Dashboard() {
     contactsLoading: false,
     messagesLoading: false,
     contactsPageToken: "",
-    messagesPageToken: ""
+    messagesPageToken: "",
   });
 
   const updateState = (updates: Partial<DashboardState>) => {
-    setState(prev => ({ ...prev, ...updates }));
+    setState((prev) => ({ ...prev, ...updates }));
   };
 
   const handleFolderSelect = (folder: SidebarFolder) => {
-    updateState({ 
-      selectedFolder: folder, 
+    updateState({
+      selectedFolder: folder,
       selectedContact: null,
       contacts: [],
       messages: [],
       contactsPageToken: "",
-      messagesPageToken: ""
+      messagesPageToken: "",
     });
   };
 
   const handleContactSelect = (contact: EmailContact) => {
-    updateState({ 
+    updateState({
       selectedContact: contact,
       messages: [],
-      messagesPageToken: ""
+      messagesPageToken: "",
     });
   };
 
   const handleMessageSent = (newMessage: EmailMessage) => {
     updateState({
-      messages: [...state.messages, newMessage]
+      messages: [...state.messages, newMessage],
     });
   };
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-gray-100 via-white to-gray-200 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900">
-      {/* Sidebar */}
+    <div className="flex h-screen bg-gray-100/90 dark:bg-gray-950 overflow-hidden">
+      {/* Sidebar Navigation */}
       <Sidebar
         selectedFolder={state.selectedFolder}
         onFolderSelect={handleFolderSelect}
       />
 
-      {/* Contact List */}
-      <div className="flex flex-col w-90 m-4 rounded-2xl shadow-lg bg-white/80 dark:bg-gray-900/80 overflow-hidden">
-        <ContactList
-          selectedFolder={state.selectedFolder}
-          selectedContact={state.selectedContact}
-          contacts={state.contacts}
-          loading={state.contactsLoading}
-          pageToken={state.contactsPageToken}
-          onContactSelect={handleContactSelect}
-          onContactsUpdate={(contacts, pageToken) => 
-            updateState({ contacts, contactsPageToken: pageToken })
-          }
-          onLoadingChange={(loading) => updateState({ contactsLoading: loading })}
-        />
-      </div>
+      {/* Main Panes Container */}
+      <main className="flex flex-1 my-3 mr-3 gap-3 overflow-hidden min-w-0">
+        {/* Contact List Panel */}
+        <aside className="flex flex-col w-80 lg:w-96 rounded-2xl shadow-xs border border-gray-200/80 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden shrink-0">
+          <ContactList
+            selectedFolder={state.selectedFolder}
+            selectedContact={state.selectedContact}
+            contacts={state.contacts}
+            loading={state.contactsLoading}
+            pageToken={state.contactsPageToken}
+            onContactSelect={handleContactSelect}
+            onContactsUpdate={(contacts, pageToken) =>
+              updateState({ contacts, contactsPageToken: pageToken })
+            }
+            onLoadingChange={(loading) => updateState({ contactsLoading: loading })}
+          />
+        </aside>
 
-      {/* Chat Area */}
-      <div className="flex flex-1 flex-col m-4 rounded-2xl shadow-lg bg-white/80 dark:bg-gray-900/80 overflow-hidden">
-        <ChatArea
-          selectedContact={state.selectedContact}
-          messages={state.messages}
-          loading={state.messagesLoading}
-          pageToken={state.messagesPageToken}
-          onMessagesUpdate={(messages, pageToken) => 
-            updateState({ messages, messagesPageToken: pageToken })
-          }
-          onLoadingChange={(loading) => updateState({ messagesLoading: loading })}
-          onMessageSent={handleMessageSent}
-        />
-      </div>
+        {/* Email Reading & Composer Panel */}
+        <section className="flex flex-1 flex-col rounded-2xl shadow-xs border border-gray-200/80 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden min-w-0">
+          <ChatArea
+            selectedContact={state.selectedContact}
+            messages={state.messages}
+            loading={state.messagesLoading}
+            pageToken={state.messagesPageToken}
+            onMessagesUpdate={(messages, pageToken) =>
+              updateState({ messages, messagesPageToken: pageToken })
+            }
+            onLoadingChange={(loading) => updateState({ messagesLoading: loading })}
+            onMessageSent={handleMessageSent}
+          />
+        </section>
+      </main>
     </div>
   );
 }
