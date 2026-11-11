@@ -22,8 +22,10 @@ export interface EmailContact {
   timestamp: string;
   labels: string[];
   unread: boolean;
+  unreadCount?: number;
   snippet: string;
 }
+
 
 export interface EmailAttachment {
   filename: string;
@@ -43,6 +45,10 @@ export interface EmailMessage {
   subject: string;
   bodyPlain?: string;
   bodyHtml?: string;
+  cleanBodyHtml?: string;
+  quotedHtml?: string;
+  cleanBodyPlain?: string;
+  quotedText?: string;
   timestamp: string;
   attachments?: EmailAttachment[];
   isSent: boolean;
@@ -56,6 +62,9 @@ export interface SendEmailRequest {
   subject: string;
   body_plain?: string;
   body_html?: string;
+  thread_id?: string;
+  in_reply_to?: string;
+  references?: string;
   attachments?: {
     filename: string;
     content: string;

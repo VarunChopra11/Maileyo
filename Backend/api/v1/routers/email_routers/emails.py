@@ -1,12 +1,13 @@
-from fastapi import APIRouter, HTTPException, status, Request, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, status, Request, Response, Depends
 from typing import Optional
 import logging
+import base64
 from datetime import datetime
 
 from api.v1.schemas.emails import (
     FetchEmailsResponse, FetchEmailsByContactRequest,
     SendEmailRequest, SendEmailResponse, EmailFolder,
-    DownloadAttachmentResponse
+    DownloadAttachmentResponse, MarkAsReadRequest
 )
 from api.v1.services.email_services.gmail_service import GmailService
 from api.v1.utils.tokens import get_current_user
@@ -64,7 +65,6 @@ async def fetch_emails(
 async def fetch_emails_by_contact(
     request: Request,
     contact_request: FetchEmailsByContactRequest,
-    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user)
 ):
     try:
@@ -77,7 +77,6 @@ async def fetch_emails_by_contact(
         result = await gmail_service.fetch_emails_by_contact(
             user_id=current_user["google_id"],
             email_address=contact_request.email_address,
-            background_tasks=background_tasks,
             max_results=contact_request.max_results,
             page_token=contact_request.page_token
         )
@@ -126,12 +125,15 @@ async def send_email(
             body_html=email_request.body_html,
             cc=email_request.cc,
             bcc=email_request.bcc,
+            thread_id=email_request.thread_id,
+            in_reply_to=email_request.in_reply_to,
+            references=email_request.references,
             attachments=email_request.attachments
         )
         
         return SendEmailResponse(
             message_id=result["id"],
-            thread_id=result.get("threadId"),
+            thread_id=result.get("threadId", ""),
             status="sent",
             sent_at=datetime.now()
         )
@@ -145,6 +147,32 @@ async def send_email(
             detail="Failed to send email"
         )
 
+
+@router.post("/mark-as-read")
+async def mark_as_read(
+    mark_request: MarkAsReadRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Explicit endpoint to mark specific messages as read when viewed by the user.
+    """
+    try:
+        if not mark_request.message_ids:
+            return {"status": "success", "marked_read_count": 0}
+
+        await gmail_service.mark_messages_as_read(
+            user_id=current_user["google_id"],
+            message_ids=mark_request.message_ids
+        )
+        return {"status": "success", "marked_read_count": len(mark_request.message_ids)}
+    except Exception as e:
+        logger.error(f"Error marking messages as read: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to mark messages as read"
+        )
+
+
 @router.get("/attachments/{message_id}/{attachment_id}", response_model=DownloadAttachmentResponse)
 async def download_attachment(
     message_id: str,
@@ -155,9 +183,6 @@ async def download_attachment(
 ):
     """
     Download an email attachment by message ID and attachment ID.
-    
-    - **message_id**: Gmail message ID containing the attachment
-    - **attachment_id**: Specific attachment ID within the message
     """
     try:
         result = await gmail_service.download_attachment(
@@ -183,3 +208,40 @@ async def download_attachment(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to download attachment"
         )
+
+
+@router.get("/{message_id}/attachments/{attachment_id}/inline")
+@router.get("/attachments/{message_id}/{attachment_id}/inline")
+async def get_inline_attachment(
+    message_id: str,
+    attachment_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Secure authenticated image proxy for inline CID images.
+    """
+    try:
+        result = await gmail_service.download_attachment(
+            user_id=current_user["google_id"],
+            message_id=message_id,
+            attachment_id=attachment_id,
+        )
+        raw_b64 = result.get("data", "")
+        clean_b64 = raw_b64.replace("-", "+").replace("_", "/").strip()
+        pad = len(clean_b64) % 4
+        if pad:
+            clean_b64 += "=" * (4 - pad)
+        file_bytes = base64.b64decode(clean_b64)
+        mime_type = result.get("mime_type", "image/png")
+        return Response(
+            content=file_bytes,
+            media_type=mime_type,
+            headers={"Cache-Control": "private, max-age=86400"}
+        )
+    except Exception as e:
+        logger.error(f"Error fetching inline attachment: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to load inline image"
+        )
+

@@ -3,8 +3,8 @@ import { useSelector } from "react-redux";
 import { Card, CardContent } from "@/components/ui/card";
 // import { Skeleton } from "@/components/ui/skeleton";
 function ChatCard() {
-  const userMessage = useSelector((state: any) => state.userMessage);
-  const modelMessage = useSelector((state: any) => state.modelMessage);
+  const userMessage = useSelector((state: any) => state.userMessage || []);
+  const modelMessage = useSelector((state: any) => state.modelMessage || []);
   const maxLength = Math.max(userMessage.length, modelMessage.length);
   return (
     <div className="mt-28 h-[37rem] m-auto max-w-4xl">

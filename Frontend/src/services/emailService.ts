@@ -136,10 +136,19 @@ class EmailService {
     });
   }
 
+  async markAsRead(messageIds: string[]): Promise<any> {
+    if (!messageIds || messageIds.length === 0) return { status: "success", marked_read_count: 0 };
+    return this.makeRequest("/emails/mark-as-read", {
+      method: "POST",
+      data: { message_ids: messageIds },
+    });
+  }
+
   /**
    * Download attachment using backend API, returns { filename, mime_type, size, data (base64) }
    */
   async downloadAttachmentByApi(messageId: string, attachmentId: string, fileName: string, mimeType: string): Promise<{ filename: string; mime_type: string; size: number; data: string }> {
+
     try {
       const params = new URLSearchParams({ file_name: fileName, mime_type: mimeType });
       const url = `/emails/attachments/${messageId}/${attachmentId}?${params.toString()}`;

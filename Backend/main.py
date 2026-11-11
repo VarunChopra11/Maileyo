@@ -17,6 +17,9 @@ app = FastAPI(lifespan=lifespan)
 origins = [
     "https://app.maileyo.in",
     "http://localhost:8080",
+    "http://127.0.0.1:8080",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
 ]
 
 app.add_middleware(
@@ -29,6 +32,8 @@ app.add_middleware(
 
 app.include_router(google.router, tags=["auth"])
 app.include_router(emails.router, tags=["emails"])
+app.include_router(google.router, prefix="/api/v1", tags=["auth"])
+app.include_router(emails.router, prefix="/api/v1", tags=["emails"])
 
 @app.get("/wakeup")
 async def wakeup():

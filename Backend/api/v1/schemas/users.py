@@ -8,7 +8,8 @@ class OAuthToken(BaseModel):
     access_token: str = Field(..., min_length=10)
     refresh_token: str = Field(..., min_length=10)
     access_token_expiry: datetime
-    refresh_token_expiry: datetime
+    refresh_token_expiry: Optional[datetime] = None
+
 
 
 class UserCreate(BaseModel):

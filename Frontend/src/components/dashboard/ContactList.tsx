@@ -5,23 +5,9 @@ import { emailService } from "@/services/emailService";
 import { toast } from "sonner";
 import { fetchAuthenticatedUser } from "../../lib/auth";
 
-// Add type definitions for email structures
 interface EmailHeader {
   name: string;
   value: string;
-}
-
-interface EmailPayload {
-  headers?: EmailHeader[];
-}
-
-interface RawEmail {
-  id: string;
-  payload?: EmailPayload;
-  snippet?: string;
-  internalDate: string;
-  labelIds?: string[];
-  threadId?: string;
 }
 
 interface ContactListProps {
@@ -81,24 +67,63 @@ function ContactList({
       // Access emails directly from response
       const emailsArray = response.emails || [];
       
-      // Transform the response to EmailContact format
-      const newContacts: EmailContact[] = emailsArray.map((email: RawEmail) => {
-        const { contactName, contactEmail } = extractContactInfo(email.payload?.headers, currentUser?.email);
-        
-        return {
-          id: email.id,
-          name: contactName,
-          email: contactEmail,
-          lastMessage: email.snippet || "",
-          timestamp: new Date(Number(email.internalDate)).toISOString(),
-          labels: email.labelIds || [],
-          unread: email.labelIds ? email.labelIds.includes('UNREAD') : false,
-          snippet: email.snippet || ""
-        };
-      });
+      // Deduplicate and aggregate contacts by unique email address
+      const contactMap = new Map<string, EmailContact>();
 
-      const updatedContacts = loadMore ? [...contacts, ...newContacts] : newContacts;
-      onContactsUpdate(updatedContacts, response.next_page_token || "");
+      if (loadMore) {
+        for (const c of contacts) {
+          contactMap.set(c.email.toLowerCase().trim(), { ...c });
+        }
+      }
+
+      for (const email of emailsArray) {
+        const { contactName, contactEmail } = extractContactInfo(email.payload?.headers, currentUser?.email);
+        if (!contactEmail) continue;
+
+        const emailKey = contactEmail.toLowerCase().trim();
+        const emailTimestamp = new Date(Number(email.internalDate)).toISOString();
+        const isUnread = Boolean(email.labelIds && email.labelIds.includes('UNREAD'));
+        const snippet = email.snippet || "";
+        const labels = email.labelIds || [];
+
+        const existing = contactMap.get(emailKey);
+        if (existing) {
+          const isNewer = new Date(emailTimestamp).getTime() > new Date(existing.timestamp).getTime();
+          const combinedLabels = Array.from(new Set([...existing.labels, ...labels]));
+          const newUnreadCount = (existing.unreadCount || 0) + (isUnread ? 1 : 0);
+
+          contactMap.set(emailKey, {
+            ...existing,
+            id: isNewer ? email.id : existing.id,
+            name: (existing.name === "Unknown" || !existing.name) ? contactName : existing.name,
+            lastMessage: isNewer ? snippet : existing.lastMessage,
+            snippet: isNewer ? snippet : existing.snippet,
+            timestamp: isNewer ? emailTimestamp : existing.timestamp,
+            labels: combinedLabels,
+            unread: existing.unread || isUnread,
+            unreadCount: newUnreadCount,
+          });
+        } else {
+          contactMap.set(emailKey, {
+            id: email.id,
+            name: contactName || contactEmail.split('@')[0],
+            email: contactEmail,
+            lastMessage: snippet,
+            snippet: snippet,
+            timestamp: emailTimestamp,
+            labels: labels,
+            unread: isUnread,
+            unreadCount: isUnread ? 1 : 0,
+          });
+        }
+      }
+
+      const deduplicatedContacts = Array.from(contactMap.values()).sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+
+      onContactsUpdate(deduplicatedContacts, response.next_page_token || "");
+
       
     } catch (error) {
       console.error("Failed to fetch contacts:", error);
@@ -381,7 +406,14 @@ function ContactList({
 
                 {/* Unread indicator */}
                 {contact.unread && (
-                  <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 animate-pulse"></div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {contact.unreadCount && contact.unreadCount > 1 ? (
+                      <span className="px-1.5 py-0.5 text-[10px] font-bold bg-blue-600 text-white rounded-full leading-none">
+                        {contact.unreadCount}
+                      </span>
+                    ) : null}
+                    <div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-pulse" />
+                  </div>
                 )}
               </div>
             ))}

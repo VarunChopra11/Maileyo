@@ -82,7 +82,14 @@ class SendEmailRequest(BaseModel):
     subject: str = Field(..., min_length=1, max_length=500)
     body_plain: Optional[str] = None
     body_html: Optional[str] = None
+    thread_id: Optional[str] = None
+    in_reply_to: Optional[str] = None
+    references: Optional[str] = None
     attachments: Optional[List[Dict[str, Any]]] = None  # Base64 encoded file data
+
+
+class MarkAsReadRequest(BaseModel):
+    message_ids: List[str]
 
 
 class SendEmailResponse(BaseModel):

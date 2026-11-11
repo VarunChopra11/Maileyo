@@ -7,8 +7,8 @@ import store from "./store/store.ts";
 import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import Home from "./pages/Home.tsx";
 // import { ThemeProvider } from "./components/ThemeProvider.tsx";
-import { KindeProvider } from "@kinde-oss/kinde-auth-react";
 import Dashboard from "./pages/Dashboard.tsx";
+
 import ProtectedRoute from "./components/ProtectedRoute";
 import PageNotFound from "./components/PageNotFound.tsx";
 import EmailDisplay from "./pages/EmailDisplay.tsx";
@@ -97,19 +97,11 @@ const router = createBrowserRouter([
 ]);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <KindeProvider
-    clientId={import.meta.env.VITE_KINDE_CLIENT_ID}
-    domain={import.meta.env.VITE_KINDE_DOMAIN}
-    logoutUri={window.location.origin}
-    redirectUri={window.location.origin}
-  >
-    <Provider store={store}>
-      {/* <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme"> */}
-        <RouterProvider router={router} />
-      {/* </ThemeProvider> */}
-    </Provider>
-  </KindeProvider>
+  <Provider store={store}>
+    <RouterProvider router={router} />
+  </Provider>
 );
+
 
 
 
