@@ -42,10 +42,13 @@ function ComposeMessage({
   const [internalExpanded, setInternalExpanded] = useState(false);
   const isExpanded = externalExpanded !== undefined ? externalExpanded : internalExpanded;
 
-  const setIsExpanded = (val: boolean) => {
-    setInternalExpanded(val);
-    onToggleExpand?.(val);
-  };
+  const setIsExpanded = useCallback(
+    (val: boolean) => {
+      setInternalExpanded(val);
+      onToggleExpand?.(val);
+    },
+    [onToggleExpand]
+  );
 
   const [isRichText, setIsRichText] = useState(false);
   const [showCcBcc, setShowCcBcc] = useState(false);
@@ -93,11 +96,11 @@ function ComposeMessage({
   const expand = useCallback(() => {
     setIsExpanded(true);
     setTimeout(() => textareaRef.current?.focus(), 80);
-  }, []);
+  }, [setIsExpanded]);
 
   const collapse = useCallback(() => {
     setIsExpanded(false);
-  }, []);
+  }, [setIsExpanded]);
 
   const discard = () => {
     setFormData((prev) => ({
@@ -240,7 +243,7 @@ function ComposeMessage({
                 (resolve, reject) => {
                   const reader = new FileReader();
                   reader.onload = () => {
-                    let content = reader.result as string;
+                    const content = reader.result as string;
                     let base64Content = content;
                     if (content.startsWith("data:")) {
                       const commaIndex = content.indexOf(",");
@@ -458,7 +461,7 @@ function ComposeMessage({
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
             <div className="flex items-center gap-2">
               <label
                 htmlFor="compose-to"
@@ -495,7 +498,7 @@ function ComposeMessage({
 
         {/* Optional Cc / Bcc Fields */}
         {showCcBcc && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 pt-1">
             <div className="flex items-center gap-2">
               <label
                 htmlFor="compose-cc"

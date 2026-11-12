@@ -5,3 +5,8 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+
+# Agent runtime metadata
+.agents/
+ORIGINAL_REQUEST.md
+

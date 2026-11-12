@@ -10,7 +10,9 @@ import {
   LogOut,
   Mail,
   Users,
-  Tag
+  Tag,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -20,11 +22,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { SidebarFolder } from "@/types/email";
+import { useCompose } from "@/context/ComposeContext";
 import { fetchAuthenticatedUser, getGoogleLoginUrl } from "../../lib/auth";
 
 interface SidebarProps {
   selectedFolder: SidebarFolder;
   onFolderSelect: (folder: SidebarFolder) => void;
+  onCompose?: () => void;
 }
 
 interface User {
@@ -83,11 +87,20 @@ const folderItems = [
     icon: FileText,
     count: 0
   },
+  {
+    id: "Trash" as SidebarFolder,
+    label: "Trash",
+    icon: Trash2,
+    count: 0
+  },
 ];
 
-function Sidebar({ selectedFolder, onFolderSelect }: SidebarProps) {
+function Sidebar({ selectedFolder, onFolderSelect, onCompose }: SidebarProps) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const composeContext = useCompose();
+  const handleCompose = onCompose || composeContext?.openCompose;
 
   useEffect(() => {
     const loadUser = async () => {
@@ -122,16 +135,35 @@ function Sidebar({ selectedFolder, onFolderSelect }: SidebarProps) {
   };
 
   return (
-  <div className="p-1 w-24 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col h-full justify-between">
-      {/* Logo/Brand */}
-      <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex justify-center">
-        <a href="/">
-          <img src="/LogoPNG.png" alt="Maileyo" className="w-8 h-8" />
-        </a>
+    <div className="hidden md:flex p-1 w-24 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex-col h-full justify-between shrink-0">
+      {/* Top Header & Compose Button */}
+      <div>
+        {/* Logo/Brand */}
+        <div className="p-3 border-b border-gray-200 dark:border-gray-700 flex justify-center">
+          <a href="/">
+            <img src="/LogoPNG.png" alt="Maileyo" className="w-8 h-8" />
+          </a>
+        </div>
+
+        {/* Prominent Compose Trigger Button */}
+        <div className="p-2 border-b border-gray-200/80 dark:border-gray-800">
+          <button
+            type="button"
+            onClick={() => handleCompose?.()}
+            title="Compose new email (Shortcut: C)"
+            aria-label="Compose new email"
+            className="w-full flex flex-col items-center justify-center py-2.5 px-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white shadow-sm hover:shadow-md transition-all duration-200 group focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 cursor-pointer"
+          >
+            <div className="p-1.5 rounded-lg bg-indigo-500/40 group-hover:bg-indigo-500/60 transition-colors">
+              <Plus className="w-5 h-5 transition-transform group-hover:scale-110" />
+            </div>
+            <span className="text-xs font-semibold tracking-wide mt-1">Compose</span>
+          </button>
+        </div>
       </div>
 
-  {/* Navigation */}
-  <nav className="flex-1 p-2 flex flex-col gap-4">
+      {/* Navigation */}
+      <nav className="flex-1 p-2 flex flex-col gap-4 overflow-y-auto min-h-0">
         {folderItems.map((item) => {
           const Icon = item.icon;
           const isSelected = selectedFolder === item.id;

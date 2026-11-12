@@ -1,8 +1,10 @@
 import { useEffect, useCallback, useState, useRef } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Menu } from "lucide-react";
 import { EmailContact, SidebarFolder } from "@/types/email";
 import { emailService } from "@/services/emailService";
 import { toast } from "sonner";
+import { useCompose } from "@/context/ComposeContext";
+import MobileFolderDrawer from "./MobileFolderDrawer";
 import { fetchAuthenticatedUser } from "../../lib/auth";
 
 interface EmailHeader {
@@ -19,6 +21,9 @@ interface ContactListProps {
   onContactSelect: (contact: EmailContact) => void;
   onContactsUpdate: (contacts: EmailContact[], pageToken: string) => void;
   onLoadingChange: (loading: boolean) => void;
+  onFolderSelect?: (folder: SidebarFolder) => void;
+  onCompose?: () => void;
+  onOpenDrawer?: () => void;
 }
 
 interface AuthenticatedUser {
@@ -50,7 +55,13 @@ function ContactList({
   onContactSelect,
   onContactsUpdate,
   onLoadingChange,
+  onFolderSelect,
+  onCompose,
+  onOpenDrawer,
 }: ContactListProps) {
+  const composeContext = useCompose();
+  const handleCompose = onCompose || composeContext?.openCompose;
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
   const observer = useRef<IntersectionObserver | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
@@ -220,6 +231,7 @@ function ContactList({
     if (currentUser) {
       fetchContacts(selectedFolder);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFolder, currentUser]);
 
   useEffect(() => {
@@ -295,11 +307,27 @@ function ContactList({
     <div className="w-full bg-white dark:bg-gray-900 flex flex-col h-full overflow-hidden">
       {/* Header */}
       <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between shrink-0">
-        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 capitalize tracking-tight">
-          {selectedFolder.replace("+", " + ")}
-        </h2>
+        <div className="flex items-center gap-2 min-w-0">
+          {/* Mobile Drawer Trigger (visible on <md) */}
+          <button
+            type="button"
+            onClick={() => {
+              setDrawerOpen(true);
+              onOpenDrawer?.();
+            }}
+            title="Open folder menu"
+            aria-label="Open folders navigation drawer"
+            className="md:hidden inline-flex items-center justify-center -ml-1.5 p-2.5 min-h-[44px] min-w-[44px] rounded-xl text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+          >
+            <Menu className="w-5 h-5 shrink-0" />
+            <span className="sr-only">Open folders menu</span>
+          </button>
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 capitalize tracking-tight truncate min-w-0">
+            {selectedFolder.replace("+", " + ")}
+          </h2>
+        </div>
         {contacts.length > 0 && (
-          <span className="text-xs text-gray-400 font-medium">
+          <span className="text-xs text-gray-400 font-medium shrink-0 ml-2">
             {contacts.length} conversations
           </span>
         )}
@@ -390,6 +418,21 @@ function ContactList({
           </div>
         )}
       </div>
+
+      {/* Mobile Slide-Out Folder Drawer */}
+      <MobileFolderDrawer
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        selectedFolder={selectedFolder}
+        onFolderSelect={(folder) => {
+          onFolderSelect?.(folder);
+          setDrawerOpen(false);
+        }}
+        onCompose={() => {
+          setDrawerOpen(false);
+          handleCompose?.();
+        }}
+      />
     </div>
   );
 }

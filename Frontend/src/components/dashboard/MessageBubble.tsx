@@ -1,6 +1,8 @@
-import { EmailMessage } from "@/types/email";
-import { Paperclip, Download, CornerUpLeft } from "lucide-react";
+import React from "react";
+import { EmailMessage, EmailAttachment } from "@/types/email";
+import { Paperclip, Download, CornerUpLeft, CornerUpRight } from "lucide-react";
 import { emailService } from "@/services/emailService";
+import { useCompose } from "@/context/ComposeContext";
 import { toast } from "sonner";
 import { SecureEmailRenderer } from "./SecureEmailRenderer";
 
@@ -8,9 +10,30 @@ interface MessageBubbleProps {
   message: EmailMessage;
   isCurrentUser: boolean;
   onReply?: () => void;
+  onForward?: () => void;
 }
 
-function MessageBubble({ message, isCurrentUser, onReply }: MessageBubbleProps) {
+function MessageBubble({ message, isCurrentUser, onReply, onForward }: MessageBubbleProps) {
+  const { openReply, openForward } = useCompose();
+
+  const handleReplyClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onReply) {
+      onReply();
+    } else {
+      openReply(message, message.threadId);
+    }
+  };
+
+  const handleForwardClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onForward) {
+      onForward();
+    } else {
+      openForward(message);
+    }
+  };
+
   const formatFullDate = (timestamp: string) => {
     try {
       const date = new Date(timestamp);
@@ -27,7 +50,7 @@ function MessageBubble({ message, isCurrentUser, onReply }: MessageBubbleProps) 
     }
   };
 
-  const downloadAttachment = async (attachment: any) => {
+  const downloadAttachment = async (attachment: EmailAttachment) => {
     try {
       if (!message.id || !attachment.attachmentId) {
         toast.error("Attachment info missing");
@@ -64,7 +87,7 @@ function MessageBubble({ message, isCurrentUser, onReply }: MessageBubbleProps) 
         document.body.removeChild(link);
       }, 200);
       toast.success("Attachment downloaded");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Failed to download attachment:", error);
       toast.error("Failed to download attachment");
     }
@@ -107,21 +130,31 @@ function MessageBubble({ message, isCurrentUser, onReply }: MessageBubbleProps) 
           </div>
         </div>
 
-        <div className="flex items-center gap-3 shrink-0 ml-4">
-          <time className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
+        {/* Header Actions: Timestamp, Reply & Forward */}
+        <div className="flex items-center gap-1.5 shrink-0 ml-4">
+          <time className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap mr-1">
             {formatFullDate(message.timestamp)}
           </time>
-          {onReply && (
-            <button
-              type="button"
-              onClick={onReply}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-gray-800 border border-transparent hover:border-gray-200 dark:hover:border-gray-700 rounded-md transition-all shadow-2xs"
-              title="Reply to this message"
-            >
-              <CornerUpLeft className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Reply</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleReplyClick}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-gray-800 border border-transparent hover:border-gray-200 dark:hover:border-gray-700 rounded-md transition-all shadow-2xs"
+            title="Reply to this message"
+            aria-label="Reply to this message"
+          >
+            <CornerUpLeft className="w-3.5 h-3.5" />
+            <span className="hidden lg:inline">Reply</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleForwardClick}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-gray-800 border border-transparent hover:border-gray-200 dark:hover:border-gray-700 rounded-md transition-all shadow-2xs"
+            title="Forward this message"
+            aria-label="Forward this message"
+          >
+            <CornerUpRight className="w-3.5 h-3.5" />
+            <span className="hidden lg:inline">Forward</span>
+          </button>
         </div>
       </div>
 
