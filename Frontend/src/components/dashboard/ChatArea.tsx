@@ -1,8 +1,9 @@
 import { useEffect, useCallback, useRef, useState, useMemo } from "react";
-import { EmailContact, EmailMessage } from "@/types/email";
+import { EmailContact, EmailMessage, EmailAttachment } from "@/types/email";
 import MessageBubble from "./MessageBubble";
 import ComposeMessage from "./ComposeMessage";
 import { emailService } from "@/services/emailService";
+import { useCompose } from "@/context/ComposeContext";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -10,6 +11,7 @@ import {
   ArrowLeft,
   ChevronDown,
   Check,
+  Plus,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -27,6 +29,9 @@ interface ChatAreaProps {
   onMessagesUpdate: (messages: EmailMessage[], pageToken: string) => void;
   onLoadingChange: (loading: boolean) => void;
   onMessageSent: (message: EmailMessage) => void;
+  onCompose?: () => void;
+  onBackToContacts?: () => void;
+  onBack?: () => void;
 }
 
 interface EmailHeader {
@@ -53,6 +58,16 @@ interface EmailPayload {
   parts?: EmailPart[];
 }
 
+interface ParsedAttachment {
+  filename: string;
+  mime_type?: string;
+  mimeType?: string;
+  size: number;
+  attachment_id?: string;
+  attachmentId?: string;
+  content?: string;
+}
+
 interface ParsedContent {
   id: string;
   thread_id: string;
@@ -66,8 +81,8 @@ interface ParsedContent {
   quoted_body_html: string;
   clean_body_plain: string;
   quoted_body_plain: string;
-  attachments: any[];
-  inline_attachments: any[];
+  attachments: ParsedAttachment[];
+  inline_attachments: ParsedAttachment[];
 }
 
 interface RawEmail {
@@ -88,6 +103,112 @@ export interface ThreadGroup {
   messages: EmailMessage[];
 }
 
+// Pure static helper functions declared at module level for stable hook references
+const decodeBase64UrlSafe = (str: string): string => {
+  if (!str) return "";
+  try {
+    let base64 = str.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
+    const pad = base64.length % 4;
+    if (pad) {
+      base64 += "=".repeat(4 - pad);
+    }
+    const binaryStr = atob(base64);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+  } catch {
+    return str;
+  }
+};
+
+const extractHeader = (headers: EmailHeader[] | undefined, name: string): string => {
+  return headers?.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value || "";
+};
+
+const extractEmail = (headers: EmailHeader[] | undefined, name: string): string => {
+  const headerValue = extractHeader(headers, name);
+  if (!headerValue) return "";
+  const match = headerValue.match(/<(.+?)>/);
+  if (match) return match[1];
+  if (headerValue.includes("@")) return headerValue.trim();
+  return headerValue;
+};
+
+const extractEmails = (headers: EmailHeader[] | undefined, name: string): string[] => {
+  const headerValue = extractHeader(headers, name);
+  if (!headerValue) return [];
+  return headerValue
+    .split(",")
+    .map((email) => {
+      const trimmed = email.trim();
+      const match = trimmed.match(/<(.+?)>/);
+      if (match) return match[1];
+      if (trimmed.includes("@")) return trimmed;
+      return null;
+    })
+    .filter(Boolean) as string[];
+};
+
+const extractTextContent = (payload: EmailPayload | undefined): string => {
+  if (!payload) return "";
+  if (payload.body?.data && (!payload.parts || payload.parts.length === 0)) {
+    return decodeBase64UrlSafe(payload.body.data);
+  }
+  const plainParts: string[] = [];
+  const walk = (parts?: EmailPart[]) => {
+    if (!parts) return;
+    for (const part of parts) {
+      if (part.mimeType === "text/plain" && part.body?.data) {
+        plainParts.push(decodeBase64UrlSafe(part.body.data));
+      }
+      if (part.parts) walk(part.parts);
+    }
+  };
+  walk(payload.parts);
+  return plainParts.join("\n");
+};
+
+const extractHtmlContent = (payload: EmailPayload | undefined): string => {
+  if (!payload) return "";
+  if (payload.body?.data && (!payload.parts || payload.parts.length === 0)) {
+    return decodeBase64UrlSafe(payload.body.data);
+  }
+  const htmlParts: string[] = [];
+  const walk = (parts?: EmailPart[]) => {
+    if (!parts) return;
+    for (const part of parts) {
+      if (part.mimeType === "text/html" && part.body?.data) {
+        htmlParts.push(decodeBase64UrlSafe(part.body.data));
+      }
+      if (part.parts) walk(part.parts);
+    }
+  };
+  walk(payload.parts);
+  return htmlParts.join("\n");
+};
+
+const extractAttachments = (payload: EmailPayload | undefined) => {
+  const attachments: EmailAttachment[] = [];
+  const walk = (parts?: EmailPart[]) => {
+    if (!parts) return;
+    for (const part of parts) {
+      if (part.filename && part.body?.attachmentId) {
+        attachments.push({
+          filename: part.filename,
+          mimeType: part.mimeType,
+          size: part.body.size ?? 0,
+          attachmentId: part.body.attachmentId,
+        });
+      }
+      if (part.parts) walk(part.parts);
+    }
+  };
+  walk(payload?.parts);
+  return attachments;
+};
+
 function ChatArea({
   selectedContact,
   messages,
@@ -96,7 +217,14 @@ function ChatArea({
   onMessagesUpdate,
   onLoadingChange,
   onMessageSent,
+  onCompose,
+  onBackToContacts,
+  onBack,
 }: ChatAreaProps) {
+  const composeContext = useCompose();
+  const handleCompose = onCompose || composeContext?.openCompose;
+  const handleBack = onBackToContacts || onBack;
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
@@ -105,112 +233,6 @@ function ChatArea({
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  // Robust crash-free Base64URL decoder with TextDecoder
-  const decodeBase64UrlSafe = (str: string): string => {
-    if (!str) return "";
-    try {
-      let base64 = str.replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
-      const pad = base64.length % 4;
-      if (pad) {
-        base64 += "=".repeat(4 - pad);
-      }
-      const binaryStr = atob(base64);
-      const bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) {
-        bytes[i] = binaryStr.charCodeAt(i);
-      }
-      return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-    } catch {
-      return str;
-    }
-  };
-
-  const extractHeader = (headers: EmailHeader[] | undefined, name: string): string => {
-    return headers?.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value || "";
-  };
-
-  const extractEmail = (headers: EmailHeader[] | undefined, name: string): string => {
-    const headerValue = extractHeader(headers, name);
-    if (!headerValue) return "";
-    const match = headerValue.match(/<(.+?)>/);
-    if (match) return match[1];
-    if (headerValue.includes("@")) return headerValue.trim();
-    return headerValue;
-  };
-
-  const extractEmails = (headers: EmailHeader[] | undefined, name: string): string[] => {
-    const headerValue = extractHeader(headers, name);
-    if (!headerValue) return [];
-    return headerValue
-      .split(",")
-      .map((email) => {
-        const trimmed = email.trim();
-        const match = trimmed.match(/<(.+?)>/);
-        if (match) return match[1];
-        if (trimmed.includes("@")) return trimmed;
-        return null;
-      })
-      .filter(Boolean) as string[];
-  };
-
-  const extractTextContent = (payload: EmailPayload | undefined): string => {
-    if (!payload) return "";
-    if (payload.body?.data && (!payload.parts || payload.parts.length === 0)) {
-      return decodeBase64UrlSafe(payload.body.data);
-    }
-    const plainParts: string[] = [];
-    const walk = (parts?: EmailPart[]) => {
-      if (!parts) return;
-      for (const part of parts) {
-        if (part.mimeType === "text/plain" && part.body?.data) {
-          plainParts.push(decodeBase64UrlSafe(part.body.data));
-        }
-        if (part.parts) walk(part.parts);
-      }
-    };
-    walk(payload.parts);
-    return plainParts.join("\n");
-  };
-
-  const extractHtmlContent = (payload: EmailPayload | undefined): string => {
-    if (!payload) return "";
-    if (payload.body?.data && (!payload.parts || payload.parts.length === 0)) {
-      return decodeBase64UrlSafe(payload.body.data);
-    }
-    const htmlParts: string[] = [];
-    const walk = (parts?: EmailPart[]) => {
-      if (!parts) return;
-      for (const part of parts) {
-        if (part.mimeType === "text/html" && part.body?.data) {
-          htmlParts.push(decodeBase64UrlSafe(part.body.data));
-        }
-        if (part.parts) walk(part.parts);
-      }
-    };
-    walk(payload.parts);
-    return htmlParts.join("\n");
-  };
-
-  const extractAttachments = (payload: EmailPayload | undefined) => {
-    const attachments: any[] = [];
-    const walk = (parts?: EmailPart[]) => {
-      if (!parts) return;
-      for (const part of parts) {
-        if (part.filename && part.body?.attachmentId) {
-          attachments.push({
-            filename: part.filename,
-            mimeType: part.mimeType,
-            size: part.body.size,
-            attachmentId: part.body.attachmentId,
-          });
-        }
-        if (part.parts) walk(part.parts);
-      }
-    };
-    walk(payload?.parts);
-    return attachments;
   };
 
   const fetchMessages = useCallback(
@@ -249,7 +271,7 @@ function ChatArea({
                 parsed.attachments && parsed.attachments.length > 0
                   ? parsed.attachments.map((att) => ({
                       filename: att.filename,
-                      mimeType: att.mime_type || att.mimeType,
+                      mimeType: att.mime_type || att.mimeType || "",
                       size: att.size,
                       attachmentId: att.attachment_id || att.attachmentId,
                     }))
@@ -311,6 +333,7 @@ function ChatArea({
       setComposerExpanded(false);
       fetchMessages(selectedContact);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedContact?.email]);
 
   useEffect(() => {
@@ -407,8 +430,8 @@ function ChatArea({
 
   if (!selectedContact) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-white dark:bg-gray-900">
-        <div className="text-center p-8 max-w-sm">
+      <div className="flex-1 flex items-center justify-center bg-white dark:bg-gray-900 p-6">
+        <div className="text-center p-8 max-w-sm flex flex-col items-center">
           <img
             src="/LogoPNG.png"
             alt="Maileyo"
@@ -417,8 +440,22 @@ function ChatArea({
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
             No Conversation Selected
           </h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Choose a contact or message from the list on the left to read and reply.
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 leading-relaxed">
+            Choose a contact or message from the list on the left to read and reply, or start a new conversation right away.
+          </p>
+          <button
+            type="button"
+            onClick={() => handleCompose?.()}
+            aria-label="Compose new email"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-medium text-sm shadow-sm hover:shadow-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 cursor-pointer group"
+          >
+            <Plus className="w-4 h-4 transition-transform group-hover:rotate-90 duration-200" />
+            <span>Compose New Email</span>
+          </button>
+          <p className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1.5 mt-3">
+            <span>Press</span>
+            <kbd className="px-1.5 py-0.5 text-[10px] font-mono font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded shadow-2xs">C</kbd>
+            <span>anywhere to compose</span>
           </p>
         </div>
       </div>
@@ -432,8 +469,20 @@ function ChatArea({
   return (
     <div className="flex-1 flex flex-col bg-gray-50/60 dark:bg-gray-900/60 h-full min-h-0 overflow-hidden">
       {/* Contact Header */}
-      <header className="bg-white dark:bg-gray-900 border-b border-gray-200/80 dark:border-gray-800 px-5 py-3 flex items-center justify-between shrink-0 shadow-2xs">
-        <div className="flex items-center min-w-0 gap-3">
+      <header className="bg-white dark:bg-gray-900 border-b border-gray-200/80 dark:border-gray-800 px-3 sm:px-5 py-2.5 sm:py-3 flex items-center justify-between shrink-0 shadow-2xs">
+        <div className="flex items-center min-w-0 gap-2 sm:gap-3">
+          {/* Mobile Back Button: Visible only on <md screens */}
+          <button
+            type="button"
+            onClick={() => handleBack?.()}
+            aria-label="Back to contacts list"
+            title="Back to contacts list"
+            className="md:hidden inline-flex items-center justify-center -ml-1 p-2.5 min-h-[44px] min-w-[44px] rounded-xl text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 active:bg-gray-200 dark:active:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 cursor-pointer"
+          >
+            <ArrowLeft className="w-5 h-5 shrink-0" />
+            <span className="sr-only">Back to contacts</span>
+          </button>
+
           <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0 shadow-xs">
             {selectedContact.name.charAt(0).toUpperCase()}
           </div>
@@ -524,8 +573,8 @@ function ChatArea({
       {selectedThreadObj && (
         <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border-b border-indigo-100 dark:border-indigo-900/40 px-5 py-2 flex items-center justify-between text-xs shrink-0">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-indigo-600 dark:text-indigo-400 font-medium">Viewing thread:</span>
-            <strong className="text-gray-900 dark:text-gray-100 truncate max-w-[400px]">
+            <span className="text-indigo-600 dark:text-indigo-400 font-medium shrink-0">Viewing thread:</span>
+            <strong className="text-gray-900 dark:text-gray-100 truncate min-w-0 flex-1 max-w-full">
               {selectedThreadObj.subject}
             </strong>
           </div>
@@ -610,7 +659,12 @@ function ChatArea({
                       key={message.id}
                       message={message}
                       isCurrentUser={message.isSent}
-                      onReply={() => handleReplyToThread(thread.threadId)}
+                      onReply={() =>
+                        composeContext?.openReply
+                          ? composeContext.openReply(message, thread.threadId)
+                          : handleReplyToThread(thread.threadId)
+                      }
+                      onForward={() => composeContext?.openForward(message)}
                     />
                   ))}
                 </div>

@@ -50,7 +50,7 @@ function ContactUs() {
     }
     
     emailjs.sendForm(serviceId, templateId, formRef.current!, publicKey)
-      .then((_) => {
+      .then(() => {
         setIsSubmitting(false);
         setFormData({
           name: "",

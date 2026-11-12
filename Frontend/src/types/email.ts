@@ -129,3 +129,64 @@ export interface GmailMessage {
   historyId?: string;
   internalDate: string;
 }
+
+export type ComposeReplyMode = "new" | "reply" | "forward";
+
+export interface ComposeDraft {
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  bodyHtml: string;
+  bodyPlain: string;
+  attachments: File[];
+  threadId?: string;
+  inReplyTo?: string;
+  references?: string;
+  replyMode?: ComposeReplyMode;
+}
+
+export interface ComposeContextType {
+  isOpen: boolean;
+  isMinimized: boolean;
+  isMaximized: boolean;
+  draft: ComposeDraft;
+  openCompose: (initial?: Partial<ComposeDraft>) => void;
+  openReply: (message: EmailMessage, threadId?: string) => void;
+  openForward: (message: EmailMessage) => void;
+  closeCompose: () => void;
+  minimizeCompose: () => void;
+  maximizeCompose: () => void;
+  restoreCompose: () => void;
+  updateDraft: (updates: Partial<ComposeDraft>) => void;
+  clearDraft: () => void;
+}
+
+export const DEFAULT_COMPOSE_DRAFT: Readonly<ComposeDraft> = Object.freeze({
+  to: [],
+  cc: [],
+  bcc: [],
+  subject: "",
+  bodyHtml: "",
+  bodyPlain: "",
+  attachments: [],
+  replyMode: "new",
+});
+
+export const extractCleanEmail = (from: string): string => {
+  if (!from) return "";
+  const match = from.match(/<([^>]+)>/);
+  if (match && match[1]) return match[1].trim();
+  if (from.includes("@")) return from.trim();
+  return from.trim();
+};
+
+export const formatReplySubject = (subject: string): string => {
+  if (!subject || subject.trim() === "") return "Re: Conversation";
+  return subject.toLowerCase().startsWith("re:") ? subject : `Re: ${subject}`;
+};
+
+export const formatForwardSubject = (subject: string): string => {
+  if (!subject || subject.trim() === "") return "Fwd: Message";
+  return subject.toLowerCase().startsWith("fwd:") ? subject : `Fwd: ${subject}`;
+};
