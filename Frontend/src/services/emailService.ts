@@ -16,6 +16,17 @@ const axiosInstance = axios.create({
   },
 });
 
+export interface EmailApiPart {
+  mimeType: string;
+  filename?: string;
+  body?: {
+    data?: string;
+    size?: number;
+    attachmentId?: string;
+  };
+  parts?: EmailApiPart[];
+}
+
 interface EmailsApiResponse {
   emails: Array<{
     id: string;
@@ -31,16 +42,7 @@ interface EmailsApiResponse {
         data?: string;
         size?: number;
       };
-      parts?: Array<{
-        mimeType: string;
-        filename?: string;
-        body?: {
-          data?: string;
-          size?: number;
-          attachmentId?: string;
-        };
-        parts?: any[];
-      }>;
+      parts?: EmailApiPart[];
     };
     sizeEstimate?: number;
     historyId?: string;
@@ -67,16 +69,7 @@ interface FetchByContactResponse {
         data?: string;
         size?: number;
       };
-      parts?: Array<{
-        mimeType: string;
-        filename?: string;
-        body?: {
-          data?: string;
-          size?: number;
-          attachmentId?: string;
-        };
-        parts?: any[];
-      }>;
+      parts?: EmailApiPart[];
     };
     sizeEstimate?: number;
     historyId?: string;
@@ -95,13 +88,32 @@ class EmailService {
         ...options,
       });
       return response.data;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(`API request failed for ${endpoint}:`, error);
-      if (error.response) {
-        console.error('Error response:', error.response.data);
-        throw new Error(`API request failed: ${error.response.status} ${error.response.statusText}`);
+      const axiosErr = error as {
+        response?: {
+          status: number;
+          statusText: string;
+          data?: { detail?: string; error?: string; message?: string };
+        };
+        message?: string;
+      };
+      if (axiosErr.response) {
+        console.error('Error response:', axiosErr.response.data);
+        const detail =
+          axiosErr.response.data?.detail ||
+          axiosErr.response.data?.error ||
+          axiosErr.response.data?.message;
+        const message = detail || `API request failed: ${axiosErr.response.status} ${axiosErr.response.statusText}`;
+        const enhancedError = new Error(message);
+        Object.assign(enhancedError, {
+          response: axiosErr.response,
+          status: axiosErr.response.status,
+          detail,
+        });
+        throw enhancedError;
       }
-      throw new Error(`API request error: ${error.message}`);
+      throw new Error(`API request error: ${axiosErr.message || "Unknown error"}`);
     }
   }
 
@@ -136,7 +148,7 @@ class EmailService {
     });
   }
 
-  async markAsRead(messageIds: string[]): Promise<any> {
+  async markAsRead(messageIds: string[]): Promise<{ status: string; marked_read_count?: number }> {
     if (!messageIds || messageIds.length === 0) return { status: "success", marked_read_count: 0 };
     return this.makeRequest("/emails/mark-as-read", {
       method: "POST",
@@ -154,11 +166,12 @@ class EmailService {
       const url = `/emails/attachments/${messageId}/${attachmentId}?${params.toString()}`;
       const response = await axiosInstance.get(url);
       return response.data;
-    } catch (error: any) {
-      if (error.response) {
-        throw new Error(`Failed to download attachment: ${error.response.status} ${error.response.statusText}`);
+    } catch (error: unknown) {
+      const axiosErr = error as { response?: { status: number; statusText: string }; message?: string };
+      if (axiosErr.response) {
+        throw new Error(`Failed to download attachment: ${axiosErr.response.status} ${axiosErr.response.statusText}`);
       }
-      throw new Error(`Download error: ${error.message}`);
+      throw new Error(`Download error: ${axiosErr.message || "Unknown error"}`);
     }
   }
 }

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import DOMPurify from 'dompurify';
-import { ChevronDown, MoreHorizontal } from 'lucide-react';
+import { MoreHorizontal } from 'lucide-react';
 
 interface SecureEmailRendererProps {
   html?: string;
@@ -11,7 +11,7 @@ interface SecureEmailRendererProps {
   className?: string;
 }
 
-// Custom Shadow DOM container component
+// Custom Shadow DOM container component to ensure zero CSS bleed
 function ShadowContent({
   html,
   isCurrentUser,
@@ -26,71 +26,90 @@ function ShadowContent({
     if (!containerRef.current) return;
 
     if (!shadowRootRef.current) {
-      // Check if shadowRoot already exists on host
       shadowRootRef.current =
         containerRef.current.shadowRoot ||
         containerRef.current.attachShadow({ mode: 'open' });
     }
 
-    const linkColor = isCurrentUser ? '#bfdbfe' : '#2563eb';
-    const textColor = isCurrentUser ? '#ffffff' : 'inherit';
+    const linkColor = isCurrentUser ? '#6366f1' : '#2563eb';
+    const textColor = isCurrentUser ? '#1f2937' : 'inherit';
 
     const styles = `
       :host {
         display: block;
         width: 100%;
         color: ${textColor};
-        font-family: inherit;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         font-size: 0.9375rem;
         line-height: 1.6;
         word-break: break-word;
-        overflow-wrap: anywhere;
       }
       * {
         box-sizing: border-box;
       }
+      .email-body-content {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+        overflow-y: visible;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(156, 163, 175, 0.3) transparent;
+      }
+      .email-body-content::-webkit-scrollbar {
+        height: 5px;
+        width: 5px;
+      }
+      .email-body-content::-webkit-scrollbar-thumb {
+        background-color: rgba(156, 163, 175, 0.3);
+        border-radius: 9999px;
+      }
       img {
         max-width: 100% !important;
         height: auto !important;
-        border-radius: 4px;
         display: inline-block;
+        border: 0;
       }
       a {
         color: ${linkColor};
         text-decoration: underline;
-        word-break: break-all;
+        word-break: break-word;
       }
       a:hover {
         opacity: 0.85;
       }
+      /* Natural table rendering: do NOT force display:block or artificial borders on layout tables */
       table {
         border-collapse: collapse;
-        max-width: 100% !important;
-        overflow-x: auto;
-        display: block;
-        margin: 8px 0;
+        border-spacing: 0;
+        margin: 0;
+        max-width: 100%;
       }
-      th, td {
-        padding: 6px 8px;
-        border: 1px solid rgba(128, 128, 128, 0.2);
+      td, th {
+        vertical-align: top;
+      }
+      /* Only style tables that explicitly specify borders */
+      table[border]:not([border="0"]) td,
+      table[border]:not([border="0"]) th {
+        border: 1px solid rgba(156, 163, 175, 0.3);
+        padding: 6px 10px;
       }
       pre, code {
         white-space: pre-wrap;
-        word-break: break-all;
-        font-family: monospace;
-        font-size: 0.85em;
-        background: rgba(0, 0, 0, 0.06);
-        padding: 2px 4px;
+        word-break: break-word;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.875em;
+        background: rgba(0, 0, 0, 0.04);
+        padding: 2px 5px;
         border-radius: 4px;
       }
       blockquote {
-        border-left: 3px solid rgba(128, 128, 128, 0.35);
-        margin: 8px 0;
-        padding-left: 10px;
-        opacity: 0.85;
+        border-left: 3px solid rgba(156, 163, 175, 0.4);
+        margin: 10px 0;
+        padding-left: 14px;
+        color: rgba(107, 114, 128, 1);
       }
       p {
-        margin: 0 0 0.6em 0;
+        margin: 0 0 0.8em 0;
       }
       p:last-child {
         margin-bottom: 0;
@@ -150,7 +169,7 @@ export const SecureEmailRenderer: React.FC<SecureEmailRendererProps> = ({
         'color', 'colspan', 'dir', 'height', 'href', 'id', 'name', 'rowspan',
         'size', 'src', 'style', 'title', 'valign', 'width', 'target', 'rel'
       ],
-      ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|cid):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+      ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|cid):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
       FORBID_TAGS: ['script', 'object', 'embed', 'iframe', 'form', 'input', 'button', 'link', 'meta', 'applet'],
       FORBID_ATTR: [
         'onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur',
@@ -170,7 +189,7 @@ export const SecureEmailRenderer: React.FC<SecureEmailRendererProps> = ({
     }
 
     // Detect quote containers
-    const quoteRegex = /(<div[^>]*class=["\'][^"\']*gmail_quote[^"\']*["\'][\s\S]*?<\/div>|<blockquote[\s\S]*?<\/blockquote>|<div[^>]*id=["\'](?:appendonsend|divRplyFwdMsg|isReplyContent)["\'][\s\S]*?<\/div>)/i;
+    const quoteRegex = /(<div[^>]*class=["'][^"']*gmail_quote[^"']*["'][\s\S]*?<\/div>|<blockquote[\s\S]*?<\/blockquote>|<div[^>]*id=["'](?:appendonsend|divRplyFwdMsg|isReplyContent)["'][\s\S]*?<\/div>)/i;
     const match = html.match(quoteRegex);
 
     if (match && match.index !== undefined) {
@@ -209,23 +228,22 @@ export const SecureEmailRenderer: React.FC<SecureEmailRendererProps> = ({
     const tailQuote = quoteDividerIdx > -1 ? plainText.slice(quoteDividerIdx).trim() : (quotedText || '');
 
     return (
-      <div className={`space-y-2 ${className}`}>
-        <div className="whitespace-pre-wrap break-words">{mainText}</div>
+      <div className={`space-y-3 ${className}`}>
+        <div className="whitespace-pre-wrap break-words leading-relaxed text-gray-800 dark:text-gray-200">
+          {mainText}
+        </div>
         {tailQuote && (
-          <div className="mt-2 pt-2 border-t border-black/10 dark:border-white/10">
+          <div className="pt-2">
             <button
+              type="button"
               onClick={() => setShowQuoted(!showQuoted)}
-              className={`inline-flex items-center gap-1.5 text-xs font-medium py-1 px-2 rounded-md transition-colors ${
-                isCurrentUser
-                  ? 'text-blue-100 hover:bg-blue-600/40'
-                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
-              }`}
+              className="inline-flex items-center justify-center p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+              title={showQuoted ? 'Hide trimmed content' : 'Show trimmed content'}
             >
-              <MoreHorizontal className="w-3.5 h-3.5" />
-              <span>{showQuoted ? 'Hide trimmed content' : 'Show trimmed content...'}</span>
+              <MoreHorizontal className="w-4 h-4" />
             </button>
             {showQuoted && (
-              <div className="mt-2 pl-3 border-l-2 border-gray-300 dark:border-gray-600 text-xs opacity-80 whitespace-pre-wrap break-words">
+              <div className="mt-3 pl-3.5 border-l-2 border-gray-300 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 whitespace-pre-wrap break-words">
                 {tailQuote}
               </div>
             )}
@@ -240,32 +258,24 @@ export const SecureEmailRenderer: React.FC<SecureEmailRendererProps> = ({
       {/* Primary Clean Body inside isolated Shadow DOM boundary */}
       <ShadowContent html={sanitizedCleanHtml} isCurrentUser={isCurrentUser} />
 
-      {/* Collapsible Quoted Content Accordion */}
+      {/* Collapsible Quoted Content Accordion (Gmail-style minimalist trigger) */}
       {hasQuotedContent && (
-        <div className="mt-2 pt-2 border-t border-black/10 dark:border-white/10">
+        <div className="mt-4 pt-2">
           <button
             type="button"
             onClick={() => setShowQuoted(!showQuoted)}
-            className={`inline-flex items-center gap-1.5 text-xs font-medium py-1 px-2.5 rounded-md transition-all ${
-              isCurrentUser
-                ? 'text-blue-100 hover:bg-white/10'
-                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-200/60 dark:hover:bg-gray-800'
-            }`}
+            className="inline-flex items-center justify-center p-1.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+            title={showQuoted ? 'Hide trimmed content' : 'Show trimmed content'}
           >
-            {showQuoted ? (
-              <ChevronDown className="w-3.5 h-3.5" />
-            ) : (
-              <MoreHorizontal className="w-3.5 h-3.5" />
-            )}
-            <span>{showQuoted ? 'Hide trimmed content' : 'Show trimmed content...'}</span>
+            <MoreHorizontal className="w-4 h-4" />
           </button>
 
           {showQuoted && (
-            <div className="mt-2 pl-3 border-l-2 border-indigo-300/40 dark:border-indigo-600/40 opacity-85 text-xs overflow-hidden">
+            <div className="mt-3 pl-3.5 border-l-2 border-indigo-200 dark:border-indigo-800/60 opacity-85 text-xs overflow-hidden">
               {sanitizedQuotedHtml ? (
                 <ShadowContent html={sanitizedQuotedHtml} isCurrentUser={isCurrentUser} />
               ) : (
-                <div className="whitespace-pre-wrap break-words text-xs">{quotedText}</div>
+                <div className="whitespace-pre-wrap break-words text-xs text-gray-500 dark:text-gray-400">{quotedText}</div>
               )}
             </div>
           )}
